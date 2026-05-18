@@ -44,6 +44,12 @@ except Exception as e:
     print('将使用SQLite作为备选存储')
 "
 
+# 启动前端静态服务。Docker镜像中前端已构建到 /app/frontend/dist。
+if [[ -d /app/frontend/dist ]]; then
+    echo "启动前端静态服务: http://0.0.0.0:3000"
+    python -m http.server 3000 --directory /app/frontend/dist &
+fi
+
 # 启动应用
 echo "启动AutoClip应用..."
 exec "$@"

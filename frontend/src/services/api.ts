@@ -2,9 +2,16 @@ import axios from 'axios'
 import { Project, Clip, Collection } from '../store/useProjectStore'
 
 // 格式化时间函数（暂时未使用，保留备用）
+const getApiBaseUrl = () => {
+  if (typeof window === 'undefined') {
+    return 'http://localhost:8000/api/v1'
+  }
+
+  return `${window.location.protocol}//${window.location.hostname}:8000/api/v1`
+}
 
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api/v1', // FastAPI后端服务器地址
+  baseURL: getApiBaseUrl(), // FastAPI后端服务器地址
   timeout: 300000, // 增加到5分钟超时
   headers: {
     'Content-Type': 'application/json',
