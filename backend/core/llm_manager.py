@@ -37,6 +37,8 @@ class LLMManager:
             "openai_api_key": "",
             "gemini_api_key": "",
             "siliconflow_api_key": "",
+            "local_openai_api_key": "local-api-key",
+            "local_openai_base_url": "http://127.0.0.1:32080/v1",
             "model_name": "qwen-plus",
             "chunk_size": 5000,
             "min_score_threshold": 0.7,
@@ -74,7 +76,7 @@ class LLMManager:
             
             if api_key:
                 self.current_provider = LLMProviderFactory.create_provider(
-                    provider_type, api_key, model_name
+                    provider_type, api_key, model_name, **self._get_provider_kwargs(provider_type)
                 )
                 logger.info(f"已初始化{provider_type.value}提供商，模型: {model_name}")
             else:
@@ -91,12 +93,24 @@ class LLMManager:
             ProviderType.OPENAI: "openai_api_key",
             ProviderType.GEMINI: "gemini_api_key",
             ProviderType.SILICONFLOW: "siliconflow_api_key",
+            ProviderType.LOCAL_OPENAI: "local_openai_api_key",
         }
         
         key_name = key_mapping.get(provider_type)
         if key_name:
-            return self.settings.get(key_name, "")
+            api_key = self.settings.get(key_name, "")
+            if provider_type == ProviderType.LOCAL_OPENAI and not api_key:
+                return "local-api-key"
+            return api_key
         return None
+
+    def _get_provider_kwargs(self, provider_type: ProviderType) -> Dict[str, Any]:
+        """获取指定提供商的额外配置"""
+        if provider_type == ProviderType.LOCAL_OPENAI:
+            return {
+                "base_url": self.settings.get("local_openai_base_url", "http://127.0.0.1:32080/v1")
+            }
+        return {}
     
     def update_settings(self, new_settings: Dict[str, Any]):
         """更新设置"""
@@ -119,6 +133,7 @@ class LLMManager:
                 ProviderType.OPENAI: "openai_api_key",
                 ProviderType.GEMINI: "gemini_api_key",
                 ProviderType.SILICONFLOW: "siliconflow_api_key",
+                ProviderType.LOCAL_OPENAI: "local_openai_api_key",
             }
             
             key_name = key_mapping.get(provider_type)
@@ -129,7 +144,7 @@ class LLMManager:
             
             # 创建新的提供商实例
             self.current_provider = LLMProviderFactory.create_provider(
-                provider_type, api_key, model_name
+                provider_type, api_key, model_name, **self._get_provider_kwargs(provider_type)
             )
             
             logger.info(f"已切换到{provider_type.value}提供商，模型: {model_name}")
@@ -166,10 +181,10 @@ class LLMManager:
                 time.sleep(2 ** attempt)  # 指数退避
         return ""
     
-    def test_provider_connection(self, provider_type: ProviderType, api_key: str, model_name: str) -> bool:
+    def test_provider_connection(self, provider_type: ProviderType, api_key: str, model_name: str, **kwargs) -> bool:
         """测试提供商连接"""
         try:
-            provider = LLMProviderFactory.create_provider(provider_type, api_key, model_name)
+            provider = LLMProviderFactory.create_provider(provider_type, api_key, model_name, **kwargs)
             return provider.test_connection()
         except Exception as e:
             logger.error(f"测试{provider_type.value}连接失败: {e}")
@@ -196,7 +211,8 @@ class LLMManager:
             ProviderType.DASHSCOPE: "阿里通义千问",
             ProviderType.OPENAI: "OpenAI",
             ProviderType.GEMINI: "Google Gemini",
-            ProviderType.SILICONFLOW: "硅基流动"
+            ProviderType.SILICONFLOW: "硅基流动",
+            ProviderType.LOCAL_OPENAI: "本地OpenAI兼容模型"
         }
         return display_names.get(provider_type, provider_type.value)
     

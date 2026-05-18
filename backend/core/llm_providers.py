@@ -5,6 +5,7 @@
 import json
 import logging
 import os
+import re
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Union
 from enum import Enum
@@ -19,6 +20,7 @@ class ProviderType(Enum):
     OPENAI = "openai"        # OpenAI
     GEMINI = "gemini"        # Google Gemini
     SILICONFLOW = "siliconflow"  # 硅基流动
+    LOCAL_OPENAI = "local_openai"  # 本地OpenAI兼容服务
 
 @dataclass
 class ModelInfo:
@@ -350,6 +352,7 @@ class SiliconFlowProvider(LLMProvider):
             result = response.json()
             
             content = result["choices"][0]["message"]["content"]
+            content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL).strip()
             usage = result.get("usage")
             
             return LLMResponse(
@@ -405,6 +408,80 @@ class SiliconFlowProvider(LLMProvider):
             )
         ]
 
+class LocalOpenAIProvider(LLMProvider):
+    """本地OpenAI兼容提供商"""
+
+    def __init__(self, api_key: str = "local-api-key", model_name: str = "minimax2.7", **kwargs):
+        super().__init__(api_key or "local-api-key", model_name, **kwargs)
+        self.base_url = kwargs.get("base_url") or "http://127.0.0.1:32080/v1"
+
+    def call(self, prompt: str, input_data: Any = None, **kwargs) -> LLMResponse:
+        """调用本地OpenAI兼容API"""
+        try:
+            from urllib import request as urllib_request
+            from urllib.error import HTTPError
+
+            full_input = self._build_full_input(prompt, input_data)
+            headers = {"Content-Type": "application/json"}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+
+            data = {
+                "model": self.model_name,
+                "messages": [{"role": "user", "content": full_input}],
+                "stream": False,
+                **kwargs
+            }
+
+            req = urllib_request.Request(
+                f"{self.base_url.rstrip('/')}/chat/completions",
+                data=json.dumps(data, ensure_ascii=False).encode("utf-8"),
+                headers=headers,
+                method="POST"
+            )
+            try:
+                with urllib_request.urlopen(req, timeout=120) as response:
+                    result = json.loads(response.read().decode("utf-8"))
+            except HTTPError as e:
+                error_body = e.read().decode("utf-8", errors="replace")
+                raise Exception(f"HTTP {e.code}: {error_body}") from e
+
+            content = result["choices"][0]["message"]["content"]
+            content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL).strip()
+            usage = result.get("usage")
+
+            return LLMResponse(
+                content=content,
+                usage=usage,
+                model=self.model_name,
+                finish_reason=result["choices"][0].get("finish_reason")
+            )
+
+        except Exception as e:
+            logger.error(f"本地OpenAI兼容模型调用失败: {str(e)}")
+            raise
+
+    def test_connection(self) -> bool:
+        """测试本地OpenAI兼容服务连接"""
+        try:
+            response = self.call("请回复'测试成功'")
+            return "测试成功" in response.content or "success" in response.content.lower()
+        except Exception as e:
+            logger.error(f"本地OpenAI兼容服务连接测试失败: {e}")
+            return False
+
+    def get_available_models(self) -> List[ModelInfo]:
+        """获取本地可用模型"""
+        return [
+            ModelInfo(
+                name="minimax2.7",
+                display_name="MiniMax M2.7 本地",
+                provider=ProviderType.LOCAL_OPENAI,
+                max_tokens=196608,
+                description="本地OpenAI兼容服务，默认地址 http://127.0.0.1:32080/v1"
+            )
+        ]
+
 class LLMProviderFactory:
     """LLM提供商工厂"""
     
@@ -413,6 +490,7 @@ class LLMProviderFactory:
         ProviderType.OPENAI: OpenAIProvider,
         ProviderType.GEMINI: GeminiProvider,
         ProviderType.SILICONFLOW: SiliconFlowProvider,
+        ProviderType.LOCAL_OPENAI: LocalOpenAIProvider,
     }
     
     @classmethod

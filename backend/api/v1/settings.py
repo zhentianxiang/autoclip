@@ -19,6 +19,8 @@ class SettingsRequest(BaseModel):
     openai_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
     siliconflow_api_key: Optional[str] = None
+    local_openai_api_key: Optional[str] = None
+    local_openai_base_url: Optional[str] = None
     model_name: Optional[str] = None
     chunk_size: Optional[int] = None
     min_score_threshold: Optional[float] = None
@@ -29,6 +31,7 @@ class ApiKeyTestRequest(BaseModel):
     provider: str
     api_key: str
     model_name: str
+    base_url: Optional[str] = None
 
 class ApiKeyTestResponse(BaseModel):
     """API密钥测试响应"""
@@ -49,6 +52,8 @@ def load_settings() -> Dict[str, Any]:
         "openai_api_key": "",
         "gemini_api_key": "",
         "siliconflow_api_key": "",
+        "local_openai_api_key": "local-api-key",
+        "local_openai_base_url": "http://127.0.0.1:32080/v1",
         "model_name": "qwen-plus",
         "chunk_size": 5000,
         "min_score_threshold": 0.7,
@@ -110,6 +115,12 @@ async def update_settings(request: SettingsRequest):
         
         if request.siliconflow_api_key is not None:
             settings["siliconflow_api_key"] = request.siliconflow_api_key
+
+        if request.local_openai_api_key is not None:
+            settings["local_openai_api_key"] = request.local_openai_api_key or "local-api-key"
+
+        if request.local_openai_base_url is not None:
+            settings["local_openai_base_url"] = request.local_openai_base_url
         
         if request.model_name is not None:
             settings["model_name"] = request.model_name
@@ -154,7 +165,15 @@ async def test_api_key(request: ApiKeyTestRequest) -> ApiKeyTestResponse:
         
         # 测试连接
         llm_manager = get_llm_manager()
-        success = llm_manager.test_provider_connection(provider_type, request.api_key, request.model_name)
+        kwargs = {}
+        if request.base_url:
+            kwargs["base_url"] = request.base_url
+        success = llm_manager.test_provider_connection(
+            provider_type,
+            request.api_key or "local-api-key",
+            request.model_name,
+            **kwargs
+        )
         
         if success:
             return ApiKeyTestResponse(success=True)

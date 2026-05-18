@@ -9,6 +9,16 @@ const { Content } = Layout
 const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
 
+type ProviderConfig = {
+  name: string
+  icon: React.ReactNode
+  color: string
+  description: string
+  apiKeyField: string
+  placeholder: string
+  optionalApiKey?: boolean
+}
+
 const SettingsPage: React.FC = () => {
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
@@ -18,7 +28,7 @@ const SettingsPage: React.FC = () => {
   const [selectedProvider, setSelectedProvider] = useState('dashscope')
 
   // 提供商配置
-  const providerConfig = {
+  const providerConfig: Record<string, ProviderConfig> = {
     dashscope: {
       name: '阿里通义千问',
       icon: <RobotOutlined />,
@@ -50,6 +60,15 @@ const SettingsPage: React.FC = () => {
       description: '硅基流动模型服务',
       apiKeyField: 'siliconflow_api_key',
       placeholder: '请输入硅基流动API密钥'
+    },
+    local_openai: {
+      name: '本地 OpenAI 兼容模型',
+      icon: <RobotOutlined />,
+      color: '#13c2c2',
+      description: '本地 vLLM / OpenAI Compatible 服务',
+      apiKeyField: 'local_openai_api_key',
+      placeholder: '本地服务如不校验可留空',
+      optionalApiKey: true
     }
   }
 
@@ -95,8 +114,11 @@ const SettingsPage: React.FC = () => {
   const handleTestApiKey = async () => {
     const apiKey = form.getFieldValue(providerConfig[selectedProvider as keyof typeof providerConfig].apiKeyField)
     const modelName = form.getFieldValue('model_name')
+    const baseUrl = selectedProvider === 'local_openai'
+      ? form.getFieldValue('local_openai_base_url')
+      : undefined
     
-    if (!apiKey) {
+    if (!apiKey && selectedProvider !== 'local_openai') {
       message.error('请先输入API密钥')
       return
     }
@@ -108,7 +130,7 @@ const SettingsPage: React.FC = () => {
 
     try {
       setLoading(true)
-      const result = await settingsApi.testApiKey(selectedProvider, apiKey, modelName)
+      const result = await settingsApi.testApiKey(selectedProvider, apiKey || 'local-api-key', modelName, baseUrl)
       if (result.success) {
         message.success('API密钥测试成功！')
       } else {
@@ -153,6 +175,8 @@ const SettingsPage: React.FC = () => {
                 initialValues={{
                   llm_provider: 'dashscope',
                   model_name: 'qwen-plus',
+                  local_openai_api_key: 'local-api-key',
+                  local_openai_base_url: 'http://127.0.0.1:32080/v1',
                   chunk_size: 5000,
                   min_score_threshold: 0.7,
                   max_clips_per_collection: 5
@@ -186,7 +210,7 @@ const SettingsPage: React.FC = () => {
                         <Space>
                           <span style={{ color: config.color }}>{config.icon}</span>
                           <span>{config.name}</span>
-                          <Tag color={config.color} size="small">{config.description}</Tag>
+                          <Tag color={config.color}>{config.description}</Tag>
                         </Space>
                       </Select.Option>
                     ))}
@@ -195,10 +219,10 @@ const SettingsPage: React.FC = () => {
 
                 {/* 动态API密钥输入 */}
                 <Form.Item
-                  label={`${providerConfig[selectedProvider as keyof typeof providerConfig].name} API Key`}
+                  label={`${providerConfig[selectedProvider as keyof typeof providerConfig].name} API Key${providerConfig[selectedProvider as keyof typeof providerConfig].optionalApiKey ? '（可选）' : ''}`}
                   name={providerConfig[selectedProvider as keyof typeof providerConfig].apiKeyField}
                   className="form-item"
-                  rules={[
+                  rules={providerConfig[selectedProvider as keyof typeof providerConfig].optionalApiKey ? [] : [
                     { required: true, message: '请输入API密钥' },
                     { min: 10, message: 'API密钥长度不能少于10位' }
                   ]}
@@ -209,6 +233,21 @@ const SettingsPage: React.FC = () => {
                     className="settings-input"
                   />
                 </Form.Item>
+
+                {selectedProvider === 'local_openai' && (
+                  <Form.Item
+                    label="本地服务地址"
+                    name="local_openai_base_url"
+                    className="form-item"
+                    rules={[{ required: true, message: '请输入本地服务地址' }]}
+                  >
+                    <Input
+                      placeholder="http://127.0.0.1:32080/v1"
+                      prefix={<ApiOutlined />}
+                      className="settings-input"
+                    />
+                  </Form.Item>
+                )}
 
                 {/* 模型选择 */}
                 <Form.Item
@@ -222,14 +261,14 @@ const SettingsPage: React.FC = () => {
                     placeholder="请选择模型"
                     showSearch
                     filterOption={(input, option) =>
-                      (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+                      String(option?.label ?? option?.value ?? '').toLowerCase().includes(input.toLowerCase())
                     }
                   >
                     {availableModels[selectedProvider]?.map((model: any) => (
-                      <Select.Option key={model.name} value={model.name}>
+                      <Select.Option key={model.name} value={model.name} label={`${model.display_name} ${model.name}`}>
                         <Space>
                           <span>{model.display_name}</span>
-                          <Tag size="small">最大{model.max_tokens} tokens</Tag>
+                          <Tag>最大{model.max_tokens} tokens</Tag>
                         </Space>
                       </Select.Option>
                     ))}
@@ -340,6 +379,7 @@ const SettingsPage: React.FC = () => {
                     <br />• <Text strong>OpenAI</Text>：访问 platform.openai.com 获取API密钥
                     <br />• <Text strong>Google Gemini</Text>：访问 ai.google.dev 获取API密钥
                     <br />• <Text strong>硅基流动</Text>：访问 docs.siliconflow.cn 获取API密钥
+                    <br />• <Text strong>本地 OpenAI 兼容模型</Text>：填写本地 /v1 地址和模型名
                   </Paragraph>
                 </div>
                 
